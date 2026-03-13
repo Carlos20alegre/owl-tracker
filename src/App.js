@@ -495,7 +495,7 @@ export default function App() {
     const existing=logs.find(l=>l.session_id===sessionId);
     const newVal=!(existing?.completado||false);
     if (existing) {
-      await supabase.from("athlete_logs").update({completado:newVal,updated_at:new Date()}).eq("id",existing.id);
+      await supabase.from("athlete_logs").update({completado:newVal}).eq("id",existing.id);
     } else {
       await supabase.from("athlete_logs").insert({user_id:session.user.id,session_id:sessionId,completado:newVal,pr_arrancada:prs.arrancada,pr_dostiempos:prs.dostiempos,pr_squat:prs.squat,pr_squatF:prs.squatF});
     }
@@ -507,7 +507,7 @@ export default function App() {
     setPrs(newPrs);
     const existing=logs.find(l=>!l.session_id);
     if (existing) {
-      await supabase.from("athlete_logs").update({[`pr_${key}`]:val,updated_at:new Date()}).eq("id",existing.id);
+      await supabase.from("athlete_logs").update({[`pr_${key}`]:val}).eq("id",existing.id);
     } else {
       await supabase.from("athlete_logs").insert({user_id:session.user.id,session_id:null,pr_arrancada:newPrs.arrancada,pr_dostiempos:newPrs.dostiempos,pr_squat:newPrs.squat,pr_squatF:newPrs.squatF});
     }
