@@ -480,9 +480,14 @@ export default function App() {
     ]);
     setWeeks(w||[]); setSessions(s||[]); setLogs(l||[]);
     if (l?.length>0) {
-      const latest=[...l].sort((a,b)=>new Date(b.updated_at)-new Date(a.updated_at))[0];
-      setPrs({arrancada:latest.pr_arrancada||0,dostiempos:latest.pr_dostiempos||0,squat:latest.pr_squat||0,squatf:latest.pr_squatf||0});
-    }
+  const prRow = l.find(x => !x.session_id) || l[0];
+  setPrs({
+    arrancada: prRow.pr_arrancada||0,
+    dostiempos: prRow.pr_dostiempos||0,
+    squat: prRow.pr_squat||0,
+    squatf: prRow.pr_squatf||0
+  });
+}
     if (w?.length>0&&!mesSel) setMesSel(w[w.length-1].mes);
 
     if (isTrainer) {
