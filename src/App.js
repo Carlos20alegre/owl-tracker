@@ -364,7 +364,8 @@ export default function App() {
     return ()=>subscription.unsubscribe();
   }, []);
 
-  useEffect(()=>{ if(session) loadAll(); },[session]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+useEffect(()=>{ if(session) loadAll(); },[session]);
 
   const loadAll = async () => {
     const [{data:w},{data:s},{data:l}] = await Promise.all([
