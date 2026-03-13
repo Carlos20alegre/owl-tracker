@@ -419,7 +419,7 @@ function SessionCard({ session, log, onToggle, prs }) {
 // ── PR PANEL ─────────────────────────────────────────────────
 function PRPanel({ prs, onChange }) {
   const [editing, setEditing] = useState(null);
-  const items=[{key:"arrancada",label:"Arrancada"},{key:"dostiempos",label:"Dos tiempos"},{key:"squat",label:"Sentadilla trasera"},{key:"squatF",label:"Sentadilla frontal"}];
+  const items=[{key:"arrancada",label:"Arrancada"},{key:"dostiempos",label:"Dos tiempos"},{key:"squat",label:"Sentadilla trasera"},{key:"squatf",label:"Sentadilla frontal"}];
   const colors=[C.accent,C.green,"#f472b6","#60a5fa"];
   return (
     <div>
@@ -457,7 +457,7 @@ export default function App() {
   const [sessions, setSessions] = useState([]);
   const [logs, setLogs] = useState([]);
   const [athletes, setAthletes] = useState([]);
-  const [prs, setPrs] = useState({arrancada:0,dostiempos:0,squat:0,squatF:0});
+  const [prs, setPrs] = useState({arrancada:0,dostiempos:0,squat:0,squatf:0});
   const [mesSel, setMesSel] = useState(null);
   const [tab, setTab] = useState("todas");
 
@@ -481,7 +481,7 @@ export default function App() {
     setWeeks(w||[]); setSessions(s||[]); setLogs(l||[]);
     if (l?.length>0) {
       const latest=[...l].sort((a,b)=>new Date(b.updated_at)-new Date(a.updated_at))[0];
-      setPrs({arrancada:latest.pr_arrancada||0,dostiempos:latest.pr_dostiempos||0,squat:latest.pr_squat||0,squatF:latest.pr_squatf||0});
+      setPrs({arrancada:latest.pr_arrancada||0,dostiempos:latest.pr_dostiempos||0,squat:latest.pr_squat||0,squatf:latest.pr_squatf||0});
     }
     if (w?.length>0&&!mesSel) setMesSel(w[w.length-1].mes);
 
@@ -497,7 +497,7 @@ export default function App() {
     if (existing) {
       await supabase.from("athlete_logs").update({completado:newVal}).eq("id",existing.id);
     } else {
-      await supabase.from("athlete_logs").insert({user_id:session.user.id,session_id:sessionId,completado:newVal,pr_arrancada:prs.arrancada,pr_dostiempos:prs.dostiempos,pr_squat:prs.squat,pr_squatf:prs.squatF});
+      await supabase.from("athlete_logs").insert({user_id:session.user.id,session_id:sessionId,completado:newVal,pr_arrancada:prs.arrancada,pr_dostiempos:prs.dostiempos,pr_squat:prs.squat,pr_squatf:prs.squatf});
     }
     loadAll();
   };
@@ -509,7 +509,7 @@ export default function App() {
     if (existing) {
       await supabase.from("athlete_logs").update({[`pr_${key}`]:val}).eq("id",existing.id);
     } else {
-      await supabase.from("athlete_logs").insert({user_id:session.user.id,session_id:null,pr_arrancada:newPrs.arrancada,pr_dostiempos:newPrs.dostiempos,pr_squat:newPrs.squat,pr_squatf:newPrs.squatF});
+      await supabase.from("athlete_logs").insert({user_id:session.user.id,session_id:null,pr_arrancada:newPrs.arrancada,pr_dostiempos:newPrs.dostiempos,pr_squat:newPrs.squat,pr_squatf:newPrs.squatf});
     }
     loadAll();
   };
