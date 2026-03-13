@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "./supabaseClient";
 
-const TRAINER_EMAIL = "carlosalecas@gmail.com";
+const TRAINER_EMAILS = ["karls_d2@hotmail.com", "carlosalecas@gmail.com"];
 
 const EJERCICIOS = {
   1:"Arrancada",2:"Arr. Encima rodilla",3:"Arr. Debajo rodilla",6:"Arr. Tacos altos",
@@ -461,7 +461,7 @@ export default function App() {
   const [mesSel, setMesSel] = useState(null);
   const [tab, setTab] = useState("todas");
 
-  const isTrainer = session?.user?.email===TRAINER_EMAIL;
+  const isTrainer = TRAINER_EMAILS.includes(session?.user?.email);
 
   useEffect(()=>{
     supabase.auth.getSession().then(({data:{session}})=>{setSession(session);setLoading(false);});
