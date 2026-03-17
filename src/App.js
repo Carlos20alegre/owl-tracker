@@ -34,11 +34,14 @@ function parseSeries(str, prKg) {
 function ejPrKg(cod, prs) {
   const c = Number(cod);
   if ([1,2,3,6,7,9,20,21,22,23,24,25].includes(c)) return prs.arrancada;
-  if ([11,12,13,16,17,33,34,35,36,37,38,39].includes(c)) return prs.dostiempos;
+  if ([10,11,12,13,16,17,33,34,35,36,37,38,39].includes(c)) return prs.dostiempos;
   if ([18,19,29,30,31,32].includes(c)) return prs.dostiempos;
   if ([40,41,43,44].includes(c)) return prs.arrancada;
   if ([47,48,49].includes(c)) return prs.dostiempos;
-  if ([50,51,52,53].includes(c)) return prs.squat;
+  if (c === 52) return prs.dostiempos;
+  if ([53].includes(c) || cod === "53e") return prs.arrancada;
+  if (c === 50) return prs.squat;
+  if (c === 51) return prs.squatf;
   return null;
 }
 
