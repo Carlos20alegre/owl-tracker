@@ -39,7 +39,7 @@ function ejPrKg(cod, prs) {
   if ([40,41,43,44].includes(c)) return prs.arrancada;
   if ([47,48,49].includes(c)) return prs.dostiempos;
   if (c === 52) return prs.dostiempos;
-  if ([53].includes(c) || cod === "53e") return prs.dostiempos;
+  if ([53].includes(c) || cod === "53e") return prs.arrancada;
   if (c === 50) return prs.squat;
   if (c === 51) return prs.squatf;
   return null;
