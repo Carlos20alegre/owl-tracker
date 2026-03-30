@@ -23,10 +23,10 @@ function parseSeries(str, prKg) {
   if (!str) return [];
   return str.split(",").map(seg => {
     seg = seg.trim();
-    const m1 = seg.match(/^(\d+)\/(\d+)\s+(\d+)/);
-    if (m1) { const pct=+m1[3],kg=prKg?Math.round(prKg*pct/100):pct; return {series:+m1[1],reps:+m1[2],pct,kg}; }
-    const m2 = seg.match(/^(\d+)\s+(\d+)/);
-    if (m2) { const pct=+m2[2],kg=prKg?Math.round(prKg*pct/100):pct; return {series:1,reps:+m2[1],pct,kg}; }
+    const m1 = seg.match(/^(\d+)[\\\/]\s*(\d+\+\d+|\d+)\s+(\d+)/);
+    if (m1) { const pct=+m1[3],kg=prKg?Math.round(prKg*pct/100):pct; return {series:+m1[1],reps:m1[2],pct,kg}; }
+    const m2 = seg.match(/^(\d+\+\d+|\d+)\s+(\d+)/);
+    if (m2) { const pct=+m2[2],kg=prKg?Math.round(prKg*pct/100):pct; return {series:1,reps:m2[1],pct,kg}; }
     return null;
   }).filter(Boolean);
 }
@@ -39,7 +39,7 @@ function ejPrKg(cod, prs) {
   if ([40,41,43,44].includes(c)) return prs.arrancada;
   if ([47,48,49].includes(c)) return prs.dostiempos;
   if (c === 52) return prs.dostiempos;
-  if ([53].includes(c) || cod === "53e") return prs.arrancada;
+  if ([53].includes(c) || cod === "53e") return prs.dostiempos;
   if (c === 50) return prs.squat;
   if (c === 51) return prs.squatf;
   return null;
@@ -384,10 +384,12 @@ function EjRow({ ej, prs }) {
       </div>
       <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
         {series.map((s,i)=>(
-          <span key={i} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:6,padding:"3px 9px",fontSize:12}}>
-            {s.series>1?`${s.series}×`:""}{s.reps}r · <span style={{color:C.muted,fontSize:11}}>{s.pct}%</span> <b style={{color:C.accent}}>{s.kg}kg</b>
-          </span>
-        ))}
+  <span key={i} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:6,padding:"3px 9px",fontSize:12}}>
+    {s.series>1?`${s.series}×`:""}{s.reps.toString().includes("+") ? s.reps.split("+").map((r,ri)=>(
+      <span key={ri}>{ri>0?<span style={{color:C.muted}}> + </span>:""}<b style={{color:C.text}}>{r}</b><span style={{color:C.muted,fontSize:10}}>rep</span></span>
+    )) : <span>{s.reps}<span style={{color:C.muted,fontSize:10}}>r</span></span>} · <span style={{color:C.muted,fontSize:11}}>{s.pct}%</span> <b style={{color:C.accent}}>{s.kg}kg</b>
+  </span>
+))}
       </div>
     </div>
   );
