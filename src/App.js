@@ -384,12 +384,20 @@ function EjRow({ ej, prs }) {
       </div>
       <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
         {series.map((s,i)=>(
-  <span key={i} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:6,padding:"3px 9px",fontSize:12}}>
-    {s.series>1?`${s.series}×`:""}{s.reps.toString().includes("+") ? s.reps.split("+").map((r,ri)=>(
-      <span key={ri}>{ri>0?<span style={{color:C.muted}}> + </span>:""}<b style={{color:C.text}}>{r}</b><span style={{color:C.muted,fontSize:10}}>rep</span></span>
-    )) : <span>{s.reps}<span style={{color:C.muted,fontSize:10}}>r</span></span>} · <span style={{color:C.muted,fontSize:11}}>{s.pct}%</span> <b style={{color:C.accent}}>{s.kg}kg</b>
-  </span>
-))}
+          <span key={i} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:6,padding:"3px 9px",fontSize:12}}>
+            {s.series>1?`${s.series}× `:""}
+            {String(s.reps).includes("+")
+              ? String(s.reps).split("+").map((r,ri)=>(
+                  <span key={ri}>
+                    {ri>0&&<span style={{color:C.muted}}> + </span>}
+                    <b style={{color:C.text}}>{r}</b>
+                    <span style={{color:C.muted,fontSize:10}}> ({ej.codigos[ri]??"rep"})</span>
+                  </span>
+                ))
+              : <span>{s.reps}<span style={{color:C.muted,fontSize:10}}>r</span></span>}
+            {" · "}<span style={{color:C.muted,fontSize:11}}>{s.pct}%</span> <b style={{color:C.accent}}>{s.kg}kg</b>
+          </span>
+        ))}
       </div>
     </div>
   );
@@ -466,7 +474,7 @@ export default function App() {
   const [mesSel, setMesSel] = useState(null);
   const [tab, setTab] = useState("todas");
 
-  const isTrainer = TRAINER_EMAILS.includes(session?.user?.email);
+  const isTrainer = TRAINER_EMAILS.includes((session?.user?.email||"").toLowerCase());
 
   useEffect(()=>{
     supabase.auth.getSession().then(({data:{session}})=>{setSession(session);setLoading(false);});
@@ -497,7 +505,7 @@ export default function App() {
 
     if (isTrainer) {
       const {data:users}=await supabase.rpc("get_users");
-      if (users) setAthletes(users.filter(u=>u.email!==TRAINER_EMAIL));
+      if (users) setAthletes(users.filter(u=>!TRAINER_EMAILS.includes((u.email||"").toLowerCase())));
     }
   };
 
