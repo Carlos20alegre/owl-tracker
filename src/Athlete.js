@@ -12,6 +12,15 @@ const fmtKg = v => String(Math.round(v*10)/10).replace(".",",");
 const fmtDate = iso => { try { return new Date(iso).toLocaleDateString("es-ES",{day:"numeric",month:"short"}); } catch { return ""; } };
 const nameOf = ej => ej.codigos.map(c=>EJERCICIOS[c]||`Ej.${c}`).join(" + ");
 
+// Selector de modo para quien es entrenador y deportista
+export function ModeSwitch({ mode, onChange }) {
+  const b = (k,label) => (
+    <button key={k} onClick={()=>mode!==k&&onChange(k)} aria-pressed={mode===k}
+      style={{flex:1,background:mode===k?C.accent:"none",color:mode===k?"#000":C.muted,border:"none",borderRadius:8,padding:"8px 0",fontSize:13,fontWeight:700,cursor:"pointer"}}>{label}</button>
+  );
+  return <div style={{display:"flex",background:C.sub,borderRadius:10,padding:3,margin:"4px 16px 8px"}}>{b("trainer","⚡ Entrenador")}{b("athlete","🏋️ Deportista")}</div>;
+}
+
 // ── PRs (atleta y entrenador) ────────────────────────────────
 export function PRPanel({ prs, onChange, history=[], extras=[] }) {
   const [editing, setEditing] = useState(null);
@@ -216,7 +225,7 @@ function SessionView({ session, week, log, prs, extras, allExtras, onBack, onSet
 }
 
 // ── APP DEL DEPORTISTA ───────────────────────────────────────
-export default function AthleteApp({ userName, weeks, sessions, logs, prs, extras, history, newWeeks, onSeen, onSignOut, onToggleSession, onSets, onUpdatePR, onAddExtra, onDelExtra }) {
+export default function AthleteApp({ onBackToTrainer, userName, weeks, sessions, logs, prs, extras, history, newWeeks, onSeen, onSignOut, onToggleSession, onSets, onUpdatePR, onAddExtra, onDelExtra }) {
   const [tab, setTab] = useState("hoy");
   const [openId, setOpenId] = useState(null);
   const [mesSel, setMesSel] = useState(null);
@@ -279,8 +288,12 @@ export default function AthleteApp({ userName, weeks, sessions, logs, prs, extra
           <div style={{fontSize:10,color:C.accent,fontWeight:900,letterSpacing:3}}>OWL FUNCTIONAL FITNESS</div>
           <div style={{fontSize:18,fontWeight:800,color:"#fff"}}>Hola, {String(userName||"").split(" ")[0]||"atleta"}</div>
         </div>
-        <button onClick={onSignOut} style={{background:C.sub,border:`1px solid ${C.border}`,color:C.muted,borderRadius:8,padding:"6px 12px",fontSize:12,cursor:"pointer"}}>Log out</button>
+        <div style={{display:"flex",gap:6}}>
+          <button onClick={onSignOut} style={{background:C.sub,border:`1px solid ${C.border}`,color:C.muted,borderRadius:8,padding:"6px 12px",fontSize:12,cursor:"pointer"}}>Log out</button>
+        </div>
       </div>
+
+      {onBackToTrainer&&!openSession&&<ModeSwitch mode="athlete" onChange={onBackToTrainer}/>}
 
       {newWeeks.length>0&&!openSession&&(
         <div style={{background:C.accent,color:"#000",padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,flexWrap:"wrap"}}>
