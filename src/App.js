@@ -45,6 +45,29 @@ function ejPrKg(cod, prs) {
   return null;
 }
 
+// ── MES / SEMANA ACTUAL ──────────────────────────────────────
+const MESES_ES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+const normTxt = (s) => String(s||"").normalize("NFD").replace(/[̀-ͯ]/g,"").trim().toLowerCase();
+
+// Mes de hoy si hay semanas publicadas con ese mes; si no, el mes de la última semana creada.
+function pickCurrentMonth(weeks, now = new Date()) {
+  if (!weeks || weeks.length === 0) return null;
+  const hoy = MESES_ES[now.getMonth()];
+  const match = [...weeks].reverse().find(w => normTxt(w.mes) === hoy);
+  return (match || weeks[weeks.length - 1]).mes;
+}
+
+// Atleta: primera semana del mes con alguna sesión sin completar (si todo está hecho, la última).
+// Entrenador: la última semana publicada.
+function pickCurrentWeekId(monthWeeks, sessions, logs, isTrainer) {
+  const conSesiones = monthWeeks.filter(w => sessions.some(s => s.week_id === w.id));
+  if (conSesiones.length === 0) return null;
+  if (isTrainer) return conSesiones[conSesiones.length - 1].id;
+  const hecha = (id) => logs.some(l => l.session_id === id && l.completado);
+  const pendiente = conSesiones.find(w => sessions.filter(s => s.week_id === w.id).some(s => !hecha(s.id)));
+  return (pendiente || conSesiones[conSesiones.length - 1]).id;
+}
+
 // ── AUTH ─────────────────────────────────────────────────────
 function AuthScreen() {
   const [email, setEmail] = useState("");
@@ -473,6 +496,8 @@ export default function App() {
   const [prs, setPrs] = useState({arrancada:0,dostiempos:0,squat:0,squatf:0});
   const [mesSel, setMesSel] = useState(null);
   const [tab, setTab] = useState("todas");
+  const [openWeeks, setOpenWeeks] = useState({});
+  const [newWeeks, setNewWeeks] = useState([]);
 
   const isTrainer = TRAINER_EMAILS.includes((session?.user?.email||"").toLowerCase());
 
@@ -501,7 +526,22 @@ export default function App() {
     squatf: prRow.pr_squatf||0
   });
 }
-    if (w?.length>0&&!mesSel) setMesSel(w[w.length-1].mes);
+    setMesSel(prev => (prev && (w||[]).some(x=>x.mes===prev)) ? prev : pickCurrentMonth(w||[]));
+
+    if (!isTrainer) {
+      const key = `owl_seen_weeks_${session.user.id}`;
+      try {
+        const raw = localStorage.getItem(key);
+        if (raw === null) {
+          // Primera vez en este dispositivo: lo ya publicado no cuenta como "nuevo"
+          localStorage.setItem(key, JSON.stringify((w||[]).map(x=>x.id)));
+          setNewWeeks([]);
+        } else {
+          const seen = JSON.parse(raw);
+          setNewWeeks((w||[]).filter(x=>!seen.includes(x.id)));
+        }
+      } catch { setNewWeeks([]); }
+    }
 
     if (isTrainer) {
       const {data:users}=await supabase.rpc("get_users");
@@ -535,6 +575,31 @@ export default function App() {
   const meses=useMemo(()=>[...new Set(weeks.map(w=>w.mes))],[weeks]);
   const weeksMes=useMemo(()=>weeks.filter(w=>w.mes===mesSel),[weeks,mesSel]);
 
+  // Se fija al cargar o cambiar de mes; no depende de `logs` para que no se mueva al marcar sesiones.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const defaultWeekId=useMemo(()=>pickCurrentWeekId(weeksMes,sessions,logs,isTrainer),[mesSel,weeks.length,sessions.length,isTrainer]);
+  const isWeekOpen=(week)=>openWeeks[week.id] ?? (week.id===defaultWeekId);
+  const toggleWeek=(week)=>setOpenWeeks(o=>({...o,[week.id]:!isWeekOpen(week)}));
+
+  const markSeen=()=>{
+    try { localStorage.setItem(`owl_seen_weeks_${session.user.id}`, JSON.stringify(weeks.map(x=>x.id))); } catch {}
+    setNewWeeks([]);
+  };
+  const goToNewWeek=()=>{
+    const last=newWeeks[newWeeks.length-1];
+    if (last) { setMesSel(last.mes); setTab("todas"); setOpenWeeks(o=>({...o,[last.id]:true})); }
+    markSeen();
+  };
+
+  useEffect(()=>{
+    const n=newWeeks.length;
+    document.title=n>0?`(${n}) OWL Lifting`:"OWL Lifting";
+    try {
+      if (n>0) Promise.resolve(navigator.setAppBadge?.(n)).catch(()=>{});
+      else Promise.resolve(navigator.clearAppBadge?.()).catch(()=>{});
+    } catch {}
+  },[newWeeks]);
+
   const stats=useMemo(()=>{
     let total=0,comp=0;
     weeksMes.forEach(w=>{
@@ -565,6 +630,18 @@ export default function App() {
         </div>
         <button onClick={()=>supabase.auth.signOut()} style={{background:C.sub,border:`1px solid ${C.border}`,color:C.muted,borderRadius:8,padding:"8px 16px",fontSize:12,cursor:"pointer"}}>Log out</button>
       </div>
+
+      {!isTrainer&&newWeeks.length>0&&(
+        <div style={{background:C.accent,color:"#000",padding:"10px 24px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+          <span style={{fontWeight:800,fontSize:14}}>
+            🆕 {newWeeks.length===1?"Nueva semana publicada":`${newWeeks.length} semanas nuevas`}: {newWeeks.map(x=>`${x.semana} (${x.mes})`).join(" · ")}
+          </span>
+          <span style={{display:"flex",gap:8}}>
+            <button onClick={goToNewWeek} style={{background:"#000",color:C.accent,border:"none",borderRadius:6,padding:"6px 14px",fontSize:12,fontWeight:800,cursor:"pointer"}}>Ver</button>
+            <button onClick={markSeen} aria-label="Descartar" style={{background:"none",color:"#000",border:"1px solid #000",borderRadius:6,padding:"6px 10px",fontSize:12,fontWeight:800,cursor:"pointer"}}>✕</button>
+          </span>
+        </div>
+      )}
 
       {meses.length>0&&(
         <div style={{background:"#000",borderBottom:`1px solid ${C.border}`,padding:"8px 24px",display:"flex",gap:8,overflowX:"auto"}}>
@@ -601,10 +678,21 @@ export default function App() {
             const wSessions=sessions.filter(s=>s.week_id===week.id)
               .filter(s=>tab==="todas"||(tab==="completadas"?logs.find(l=>l.session_id===s.id&&l.completado):!logs.find(l=>l.session_id===s.id&&l.completado)));
             if (!wSessions.length) return null;
+            const allW=sessions.filter(s=>s.week_id===week.id);
+            const doneN=allW.filter(s=>logs.some(l=>l.session_id===s.id&&l.completado)).length;
+            const open=isWeekOpen(week);
+            const isCurrent=week.id===defaultWeekId;
             return (
-              <div key={week.id} style={{marginBottom:28}}>
-                <h2 style={{color:C.accent,margin:"0 0 12px",fontSize:18,fontWeight:900,borderBottom:`1px solid ${C.border}`,paddingBottom:8}}>{week.semana}</h2>
-                {wSessions.map(s=>(
+              <div key={week.id} style={{marginBottom:open?28:14}}>
+                <button onClick={()=>toggleWeek(week)} aria-expanded={open}
+                  style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,background:"none",border:"none",borderBottom:`1px solid ${C.border}`,padding:"0 0 8px",marginBottom:open?12:0,cursor:"pointer",textAlign:"left"}}>
+                  <span style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                    <span style={{color:C.accent,fontSize:18,fontWeight:900}}>{week.semana}</span>
+                    {isCurrent&&<span style={{background:C.accent,color:"#000",fontSize:10,fontWeight:900,letterSpacing:1,padding:"2px 8px",borderRadius:20}}>{isTrainer?"ÚLTIMA":"ACTUAL"}</span>}
+                  </span>
+                  <span style={{color:C.muted,fontSize:12,whiteSpace:"nowrap"}}>{doneN}/{allW.length} · {open?"▲":"▼"}</span>
+                </button>
+                {open&&wSessions.map(s=>(
                   <SessionCard key={s.id} session={s} log={logs.find(l=>l.session_id===s.id)} onToggle={()=>toggleSession(s.id)} prs={prs}/>
                 ))}
               </div>
