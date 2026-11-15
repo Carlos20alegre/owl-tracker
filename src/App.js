@@ -1,73 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabaseClient";
-
-const TRAINER_EMAILS = ["karls_d2@hotmail.com", "carlosalecas@gmail.com"];
-
-const EJERCICIOS = {
-  1:"Arrancada",2:"Arr. Encima rodilla",3:"Arr. Debajo rodilla",6:"Arr. Tacos altos",
-  7:"Arr. Tacos bajos",9:"Arr. Lenta",10:"Dos tiempos",11:"Cargada",12:"Crg. Encima rodilla",
-  13:"Crg. Debajo rodilla",16:"Crg. Tacos altos",17:"Crg. Tacos bajos",18:"Jerk delante",
-  19:"Jerk detrás",20:"Arr. Fuerza",21:"Arr. Fza. Encima rodilla",22:"Arr. Fza. Debajo rodilla",
-  23:"Arr. Fza. Tacos bajos",24:"Arr. Fza. Tacos altos",25:"Arr. Sin flexión",29:"Push jerk delante",
-  30:"Push jerk detrás",31:"Push press delante",32:"Push press detrás",33:"Crg. Fuerza",
-  34:"Crg. Fza. Debajo rodilla",35:"Crg. Fza. Encima rodilla",36:"Crg. Fza. Tacos bajos",
-  37:"Crg. Fza. Tacos altos",38:"Crg. Fza. + Jerk",39:"Crg. Fza. + Push jerk",
-  40:"Tirón Arr. Técnico",41:"Tirón Arr. Colgante",43:"Tirón Arr. Tacos altos",
-  44:"Tirón Arr. Tacos bajos",47:"Tirón DT len.",48:"Tirón DT téc.",49:"Tirón DT col.",
-  50:"Pierna trasera",51:"Pierna delantera",52:"Pierna delantera + Jerk",53:"Pierna dinámica","53e":"Pierna estática",
-};
-
-const C = {accent:"#f5c400",green:"#34d399",red:"#f87171",bg:"#0a0a0a",card:"#141414",border:"#2a2a2a",sub:"#1a1a1a",muted:"#6b7280",text:"#e2e8f0"};
-
-function parseSeries(str, prKg) {
-  if (!str) return [];
-  return str.split(",").map(seg => {
-    seg = seg.trim();
-    const m1 = seg.match(/^(\d+)[\\\/]\s*(\d+\+\d+|\d+)\s+(\d+)/);
-    if (m1) { const pct=+m1[3],kg=prKg?Math.round(prKg*pct/100):pct; return {series:+m1[1],reps:m1[2],pct,kg}; }
-    const m2 = seg.match(/^(\d+\+\d+|\d+)\s+(\d+)/);
-    if (m2) { const pct=+m2[2],kg=prKg?Math.round(prKg*pct/100):pct; return {series:1,reps:m2[1],pct,kg}; }
-    return null;
-  }).filter(Boolean);
-}
-
-function ejPrKg(cod, prs) {
-  const c = Number(cod);
-  if ([1,2,3,6,7,9,20,21,22,23,24,25].includes(c)) return prs.arrancada;
-  if ([10,11,12,13,16,17,33,34,35,36,37,38,39].includes(c)) return prs.dostiempos;
-  if ([18,19,29,30,31,32].includes(c)) return prs.dostiempos;
-  if ([40,41,43,44].includes(c)) return prs.arrancada;
-  if ([47,48,49].includes(c)) return prs.dostiempos;
-  if (c === 52) return prs.dostiempos;
-  if ([53].includes(c) || cod === "53e") return prs.arrancada;
-  if (c === 50) return prs.squat;
-  if (c === 51) return prs.squatf;
-  return null;
-}
-
-// ── MES / SEMANA ACTUAL ──────────────────────────────────────
-const MESES_ES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
-const normTxt = (s) => String(s||"").normalize("NFD").replace(/[̀-ͯ]/g,"").trim().toLowerCase();
-
-// Mes de hoy si hay semanas publicadas con ese mes; si no, el mes de la última semana creada.
-function pickCurrentMonth(weeks, now = new Date()) {
-  if (!weeks || weeks.length === 0) return null;
-  const hoy = MESES_ES[now.getMonth()];
-  const esHoy = w => normTxt(w.mes).split(/[^a-z]+/).includes(hoy);
-  const match = [...weeks].reverse().find(esHoy);
-  return (match || weeks[weeks.length - 1]).mes;
-}
-
-// Atleta: primera semana del mes con alguna sesión sin completar (si todo está hecho, la última).
-// Entrenador: la última semana publicada.
-function pickCurrentWeekId(monthWeeks, sessions, logs, isTrainer) {
-  const conSesiones = monthWeeks.filter(w => sessions.some(s => s.week_id === w.id));
-  if (conSesiones.length === 0) return null;
-  if (isTrainer) return conSesiones[conSesiones.length - 1].id;
-  const hecha = (id) => logs.some(l => l.session_id === id && l.completado);
-  const pendiente = conSesiones.find(w => sessions.filter(s => s.week_id === w.id).some(s => !hecha(s.id)));
-  return (pendiente || conSesiones[conSesiones.length - 1]).id;
-}
+import { C, EJERCICIOS, TRAINER_EMAILS, parseSeries, ejPrKg, pickCurrentMonth, pickCurrentWeekId } from "./lib";
+import WeekForm from "./WeekEditor";
+import AthleteApp, { PRPanel } from "./Athlete";
 
 // ── AUTH ─────────────────────────────────────────────────────
 function AuthScreen() {
@@ -128,104 +63,8 @@ function AuthScreen() {
   );
 }
 
-// ── TRAINER: ADD/EDIT WEEK ────────────────────────────────────
-const EMPTY_DIA = () => ({dia:"",ejercicios:[{tipo:"num",codigos:"",nota:"",series:""},{tipo:"num",codigos:"",nota:"",series:""}]});
-
-function WeekForm({ onSave, onCancel, initial }) {
-  const [semanaName, setSemanaName] = useState(initial?.semana||"");
-  const [mes, setMes] = useState(initial?.mes||"Marzo");
-  const [dias, setDias] = useState(initial?.dias||[EMPTY_DIA(),EMPTY_DIA(),EMPTY_DIA()]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-
-  const inp = (val, onChange, ph, w="100%") => (
-    <input value={val} onChange={e=>onChange(e.target.value)} placeholder={ph}
-      style={{background:C.bg,border:`1px solid ${C.border}`,color:C.text,borderRadius:6,padding:"6px 10px",fontSize:13,width:w,boxSizing:"border-box"}}/>
-  );
-
-  const updateDia = (di,f,v) => setDias(ds=>ds.map((d,i)=>i!==di?d:{...d,[f]:v}));
-  const updateEj = (di,ei,f,v) => setDias(ds=>ds.map((d,i)=>i!==di?d:{...d,ejercicios:d.ejercicios.map((e,j)=>j!==ei?e:{...e,[f]:v})}));
-  const addEj = di => setDias(ds=>ds.map((d,i)=>i!==di?d:{...d,ejercicios:[...d.ejercicios,{tipo:"num",codigos:"",nota:"",series:""}]}));
-  const removeEj = (di,ei) => setDias(ds=>ds.map((d,i)=>i!==di?d:{...d,ejercicios:d.ejercicios.filter((_,j)=>j!==ei)}));
-  const addDia = () => setDias(ds=>[...ds,EMPTY_DIA()]);
-  const removeDia = di => setDias(ds=>ds.filter((_,i)=>i!==di));
-
-  const save = async () => {
-    if (!semanaName) { setError("Añade un nombre a la semana"); return; }
-    setLoading(true); setError(null);
-    try {
-      let weekId = initial?.id;
-      if (initial) {
-        await supabase.from("weeks").update({semana:semanaName,mes}).eq("id",initial.id);
-        await supabase.from("sessions").delete().eq("week_id",initial.id);
-      } else {
-        const {data:week,error:wErr}=await supabase.from("weeks").insert({semana:semanaName,mes}).select().single();
-        if (wErr) throw wErr;
-        weekId=week.id;
-      }
-      for (const dia of dias) {
-        const ejercicios=dia.ejercicios
-          .filter(e=>e.tipo==="libre"?e.nombre:e.series)
-          .map(e=>e.tipo==="libre"?e:{...e,codigos:String(e.codigos).split("+").map(x=>isNaN(x.trim())?x.trim():+x.trim())});
-        if (ejercicios.length>0)
-          await supabase.from("sessions").insert({week_id:weekId,dia:dia.dia||"Día",ejercicios});
-      }
-      onSave();
-    } catch(e) { setError(e.message); }
-    finally { setLoading(false); }
-  };
-
-  return (
-    <div style={{background:C.card,border:`2px solid ${C.accent}`,borderRadius:16,padding:24,marginBottom:24}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-        <h3 style={{margin:0,color:C.accent,fontWeight:900}}>{initial?"✏️ EDITAR SEMANA":"+ NUEVA SEMANA"}</h3>
-        <button onClick={onCancel} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:20}}>✕</button>
-      </div>
-
-      {(
-        <div>
-          <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
-            {inp(mes,setMes,"Mes","110px")}
-            {inp(semanaName,setSemanaName,"Nombre semana (ej: 1ª SEMANA)","auto")}
-          </div>
-          {dias.map((dia,di)=>(
-            <div key={di} style={{background:C.sub,borderRadius:10,padding:12,marginBottom:10}}>
-              <div style={{display:"flex",gap:8,marginBottom:8,alignItems:"center"}}>
-                {inp(dia.dia,v=>updateDia(di,"dia",v),`${di+1}º DIA`,"140px")}
-                <button onClick={()=>removeDia(di)} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:13,marginLeft:"auto"}}>✕ Eliminar día</button>
-              </div>
-              {dia.ejercicios.map((ej,ei)=>(
-                <div key={ei} style={{background:C.bg,borderRadius:8,padding:8,marginBottom:6,display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-                  <select value={ej.tipo} onChange={e=>updateEj(di,ei,"tipo",e.target.value)}
-                    style={{background:C.card,border:`1px solid ${C.border}`,color:C.text,borderRadius:6,padding:"5px 8px",fontSize:12}}>
-                    <option value="num">Código</option>
-                    <option value="libre">Libre</option>
-                  </select>
-                  {ej.tipo==="num"?<>
-                    {inp(ej.codigos,v=>updateEj(di,ei,"codigos",v),"Cód. (ej: 50 o 34+18)","120px")}
-                    {inp(ej.nota,v=>updateEj(di,ei,"nota",v),"Nota","90px")}
-                    {inp(ej.series,v=>updateEj(di,ei,"series",v),"Series (ej: 2/3 50, 3 60)","190px")}
-                  </>:inp(ej.nombre||"",v=>updateEj(di,ei,"nombre",v),"Descripción")}
-                  <button onClick={()=>removeEj(di,ei)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:15}}>✕</button>
-                </div>
-              ))}
-              <button onClick={()=>addEj(di)} style={{background:"none",border:`1px dashed ${C.border}`,color:C.muted,borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:12,width:"100%",marginTop:4}}>+ ejercicio</button>
-            </div>
-          ))}
-          <button onClick={addDia} style={{background:"none",border:`1px dashed ${C.border}`,color:C.muted,borderRadius:8,padding:"7px",cursor:"pointer",fontSize:13,width:"100%",marginBottom:12}}>+ día</button>
-          {error&&<div style={{color:C.red,fontSize:13,marginBottom:8}}>{error}</div>}
-          <button onClick={save} disabled={loading}
-            style={{width:"100%",background:loading?"#333":C.accent,color:"#000",border:"none",borderRadius:8,padding:"11px",fontSize:14,fontWeight:900,cursor:loading?"not-allowed":"pointer"}}>
-            {loading?"Guardando...":(initial?"💾 GUARDAR CAMBIOS":"💾 PUBLICAR SEMANA")}
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ── TRAINER PANEL ─────────────────────────────────────────────
-function TrainerPanel({ weeks, sessions, athletes, onRefresh }) {
+function TrainerPanel({ weeks, sessions, athletes, onRefresh, allWeeks }) {
   const [showForm, setShowForm] = useState(false);
   const [editingWeek, setEditingWeek] = useState(null);
   const [activeTab, setActiveTab] = useState("weeks");
@@ -261,12 +100,12 @@ function TrainerPanel({ weeks, sessions, athletes, onRefresh }) {
               + NUEVA SEMANA
             </button>
           )}
-          {showForm && <WeekForm onSave={()=>{setShowForm(false);onRefresh();}} onCancel={()=>setShowForm(false)}/>}
+          {showForm && <WeekForm allWeeks={allWeeks} allSessions={sessions} onSave={()=>{setShowForm(false);onRefresh();}} onCancel={()=>setShowForm(false)}/>}
 
           {weeks.map(week=>{
             const wSessions=sessions.filter(s=>s.week_id===week.id);
             if (editingWeek?.id===week.id) {
-              const initial={...week,dias:wSessions.map(s=>({dia:s.dia,ejercicios:s.ejercicios.map(e=>e.tipo==="num"?{...e,codigos:Array.isArray(e.codigos)?e.codigos.join("+"):e.codigos}:e)}))};
+              const initial={...week,dias:wSessions.map(s=>({id:s.id,dia:s.dia,ejercicios:s.ejercicios}))};
               return <WeekForm key={week.id} initial={initial} onSave={()=>{setEditingWeek(null);onRefresh();}} onCancel={()=>setEditingWeek(null)}/>;
             }
             return (
@@ -325,7 +164,7 @@ function TrainerPanel({ weeks, sessions, athletes, onRefresh }) {
 
 // ── EXERCISE ROW ─────────────────────────────────────────────
 function EjRow({ ej, prs }) {
-  if (ej.tipo==="libre") return <div style={{padding:"6px 0",color:"#94a3b8",fontSize:13,fontStyle:"italic"}}>• {ej.nombre}</div>;
+  if (ej.tipo==="libre") return <div style={{padding:"6px 0",color:"#94a3b8",fontSize:13,fontStyle:"italic"}}>• {ej.nombre}{ej.detalle?` · ${ej.detalle}`:""}</div>;
   const pr=ejPrKg(ej.codigos[0],prs);
   const series=parseSeries(ej.series,pr);
   const nombre=ej.codigos.map(c=>EJERCICIOS[c]||`Ej.${c}`).join(" + ")+(ej.nota?` (${ej.nota})`:"");
@@ -385,39 +224,6 @@ function SessionCard({ session, log, onToggle, prs }) {
   );
 }
 
-// ── PR PANEL ─────────────────────────────────────────────────
-function PRPanel({ prs, onChange }) {
-  const [editing, setEditing] = useState(null);
-  const items=[{key:"arrancada",label:"Arrancada"},{key:"dostiempos",label:"Dos tiempos"},{key:"squat",label:"Sentadilla trasera"},{key:"squatf",label:"Sentadilla frontal"}];
-  const colors=[C.accent,C.green,"#f472b6","#60a5fa"];
-  return (
-    <div>
-      <h2 style={{color:C.accent,margin:"0 0 16px",fontWeight:900,letterSpacing:1}}>🏆 MIS RÉCORDS</h2>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:16}}>
-        {items.map((item,i)=>(
-          <div key={item.key} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20}}>
-            <div style={{fontSize:11,color:colors[i],fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:1}}>{item.label}</div>
-            {editing===item.key?(
-              <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                <input type="number" defaultValue={prs[item.key]} id={`pr-${item.key}`}
-                  style={{background:C.sub,border:`1px solid ${C.border}`,color:C.text,borderRadius:6,padding:"6px 8px",fontSize:18,fontWeight:700,width:75}}/>
-                <button onClick={()=>{const v=+document.getElementById(`pr-${item.key}`).value;if(v>0)onChange(item.key,v);setEditing(null);}}
-                  style={{background:"#7c3aed",border:"none",color:"#fff",borderRadius:6,padding:"6px 10px",cursor:"pointer",fontWeight:700}}>✓</button>
-                <button onClick={()=>setEditing(null)} style={{background:C.sub,border:`1px solid ${C.border}`,color:C.muted,borderRadius:6,padding:"6px 8px",cursor:"pointer"}}>✕</button>
-              </div>
-            ):(
-              <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between"}}>
-                <div style={{fontSize:34,fontWeight:800,color:"#fff",lineHeight:1}}>{prs[item.key]||"—"}<span style={{fontSize:14,color:C.muted}}>{prs[item.key]?" kg":""}</span></div>
-                <button onClick={()=>setEditing(item.key)} style={{background:C.sub,border:`1px solid ${C.border}`,color:C.muted,borderRadius:6,padding:"4px 8px",cursor:"pointer",fontSize:12}}>✏️</button>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // ── MAIN APP ─────────────────────────────────────────────────
 export default function App() {
   const [session, setSession] = useState(null);
@@ -426,6 +232,8 @@ export default function App() {
   const [sessions, setSessions] = useState([]);
   const [logs, setLogs] = useState([]);
   const [athletes, setAthletes] = useState([]);
+  const [extras, setExtras] = useState([]);
+  const [history, setHistory] = useState([]);
   const [prs, setPrs] = useState({arrancada:0,dostiempos:0,squat:0,squatf:0});
   const [mesSel, setMesSel] = useState(null);
   const [showArchivo, setShowArchivo] = useState(false);
@@ -445,12 +253,16 @@ export default function App() {
   useEffect(()=>{ if(session) loadAll(); },[session]);
 
   const loadAll = async () => {
-    const [{data:w},{data:s},{data:l}]=await Promise.all([
+    const uid=session.user.id;
+    const [{data:w},{data:s},{data:l},{data:ex},{data:hi}]=await Promise.all([
       supabase.from("weeks").select("*").order("created_at"),
       supabase.from("sessions").select("*"),
-      supabase.from("athlete_logs").select("*").eq("user_id",session.user.id),
+      supabase.from("athlete_logs").select("*").eq("user_id",uid),
+      supabase.from("athlete_extras").select("*").eq("user_id",uid).order("created_at"),
+      supabase.from("pr_history").select("*").eq("user_id",uid).order("created_at"),
     ]);
-    setWeeks(w||[]); setSessions(s||[]); setLogs(l||[]);
+    const orden=(a,b)=>String(a.dia).localeCompare(String(b.dia),"es",{numeric:true});
+    setWeeks(w||[]); setSessions([...(s||[])].sort(orden)); setLogs(l||[]); setExtras(ex||[]); setHistory(hi||[]);
     if (l?.length>0) {
   const prRow = l.find(x => !x.session_id) || l[0];
   setPrs({
@@ -496,6 +308,9 @@ export default function App() {
 
   const updatePR = async (key,val) => {
     const newPrs={...prs,[key]:val};
+    if (prs[key]!==val) {
+      supabase.from("pr_history").insert({user_id:session.user.id,clave:key,valor:val}).then(()=>{});
+    }
     setPrs(newPrs);
     const existing=logs.find(l=>!l.session_id);
     if (existing) {
@@ -504,6 +319,30 @@ export default function App() {
       await supabase.from("athlete_logs").insert({user_id:session.user.id,session_id:null,pr_arrancada:newPrs.arrancada,pr_dostiempos:newPrs.dostiempos,pr_squat:newPrs.squat,pr_squatf:newPrs.squatf});
     }
     loadAll();
+  };
+
+  const saveSets = async (sessionId, sets, completado) => {
+    const uid=session.user.id;
+    const existing=logs.find(l=>l.session_id===sessionId);
+    if (existing) {
+      setLogs(ls=>ls.map(l=>l.id===existing.id?{...l,sets,completado}:l));
+      const {error}=await supabase.from("athlete_logs").update({sets,completado}).eq("id",existing.id);
+      if (error) { alert("No se pudo guardar la serie: "+error.message); loadAll(); }
+    } else {
+      const {data,error}=await supabase.from("athlete_logs").insert({user_id:uid,session_id:sessionId,sets,completado,pr_arrancada:prs.arrancada,pr_dostiempos:prs.dostiempos,pr_squat:prs.squat,pr_squatf:prs.squatf}).select().single();
+      if (error) { alert("No se pudo guardar la serie: "+error.message); return; }
+      setLogs(ls=>[...ls,data]);
+    }
+  };
+  const addExtra = async (row) => {
+    const {data,error}=await supabase.from("athlete_extras").insert({...row,user_id:session.user.id}).select().single();
+    if (error) { alert("No se pudo guardar el ejercicio: "+error.message); return; }
+    setExtras(es=>[...es,data]);
+  };
+  const delExtra = async (id) => {
+    setExtras(es=>es.filter(x=>x.id!==id));
+    const {error}=await supabase.from("athlete_extras").delete().eq("id",id);
+    if (error) loadAll();
   };
 
   const meses=useMemo(()=>[...new Set(weeks.map(w=>w.mes))],[weeks]);
@@ -548,6 +387,13 @@ export default function App() {
 
   if (loading) return <div style={{background:C.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",color:C.accent,fontSize:18,fontWeight:700}}>Cargando...</div>;
   if (!session) return <AuthScreen/>;
+
+  if (!isTrainer) return (
+    <AthleteApp userName={session.user.user_metadata?.full_name||session.user.email}
+      weeks={weeks} sessions={sessions} logs={logs} prs={prs} extras={extras} history={history} newWeeks={newWeeks}
+      onSeen={markSeen} onSignOut={()=>supabase.auth.signOut()}
+      onToggleSession={toggleSession} onSets={saveSets} onUpdatePR={updatePR} onAddExtra={addExtra} onDelExtra={delExtra}/>
+  );
 
   return (
     <div style={{background:C.bg,minHeight:"100vh",color:C.text,fontFamily:"Inter, sans-serif"}}>
@@ -602,9 +448,9 @@ export default function App() {
       </div>
 
       <div style={{padding:"0 24px 32px"}}>
-        {isTrainer&&tab!=="prs"&&<TrainerPanel weeks={weeksMes} sessions={sessions} athletes={athletes} onRefresh={loadAll}/>}
+        {isTrainer&&tab!=="prs"&&<TrainerPanel weeks={weeksMes} allWeeks={weeks} sessions={sessions} athletes={athletes} onRefresh={loadAll}/>}
         {tab==="prs"?(
-          <PRPanel prs={prs} onChange={updatePR}/>
+          <PRPanel prs={prs} onChange={updatePR} history={history} extras={extras}/>
         ):(
           weeksMes.map(week=>{
             const wSessions=sessions.filter(s=>s.week_id===week.id)
