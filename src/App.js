@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabaseClient";
 
 const TRAINER_EMAILS = ["karls_d2@hotmail.com", "carlosalecas@gmail.com"];
@@ -53,7 +53,8 @@ const normTxt = (s) => String(s||"").normalize("NFD").replace(/[̀-ͯ]/g,"").tri
 function pickCurrentMonth(weeks, now = new Date()) {
   if (!weeks || weeks.length === 0) return null;
   const hoy = MESES_ES[now.getMonth()];
-  const match = [...weeks].reverse().find(w => normTxt(w.mes) === hoy);
+  const esHoy = w => normTxt(w.mes).split(/[^a-z]+/).includes(hoy);
+  const match = [...weeks].reverse().find(esHoy);
   return (match || weeks[weeks.length - 1]).mes;
 }
 
@@ -73,6 +74,7 @@ function AuthScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [code, setCode] = useState("");
   const [mode, setMode] = useState("login");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -89,12 +91,15 @@ function AuthScreen() {
         const {error} = await supabase.auth.signInWithPassword({email,password});
         if (error) throw error;
       } else {
-        const {error} = await supabase.auth.signUp({email,password,options:{data:{full_name:name}}});
+        if (!code.trim()) throw new Error("Introduce el código de acceso del gimnasio");
+        const {error} = await supabase.auth.signUp({email,password,options:{data:{full_name:name,access_code:code.trim()}}});
         if (error) throw error;
-        alert("Revisa tu email para confirmar la cuenta y luego inicia sesión.");
-        setMode("login");
+        const {error:e2} = await supabase.auth.signInWithPassword({email,password});
+        if (e2) { alert("Cuenta creada. Ya puedes iniciar sesión."); setMode("login"); }
       }
-    } catch(e) { setError(e.message); }
+    } catch(e) {
+      setError(/Database error saving new user/i.test(e.message||"") ? "Código de acceso incorrecto" : e.message);
+    }
     finally { setLoading(false); }
   };
 
@@ -116,6 +121,7 @@ function AuthScreen() {
           {mode==="register" && inp(name,setName,"Nombre completo")}
           {inp(email,setEmail,"Email","email")}
           {inp(password,setPassword,"Contraseña","password")}
+          {mode==="register" && inp(code,setCode,"Código de acceso del gimnasio")}
           {error && <div style={{color:C.red,fontSize:13,marginBottom:10}}>{error}</div>}
           <button onClick={handle} disabled={loading}
             style={{width:"100%",background:C.accent,color:"#000",border:"none",borderRadius:8,padding:"12px",fontSize:14,fontWeight:900,cursor:"pointer",letterSpacing:1}}>
@@ -136,11 +142,6 @@ function WeekForm({ onSave, onCancel, initial }) {
   const [dias, setDias] = useState(initial?.dias||[EMPTY_DIA(),EMPTY_DIA(),EMPTY_DIA()]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [mode, setMode] = useState(initial ? "manual" : null);
-  const [imgB64, setImgB64] = useState(null);
-  const [imgPreview, setImgPreview] = useState(null);
-  const [aiLoading, setAiLoading] = useState(false);
-  const imgRef = useRef();
 
   const inp = (val, onChange, ph, w="100%") => (
     <input value={val} onChange={e=>onChange(e.target.value)} placeholder={ph}
@@ -153,39 +154,6 @@ function WeekForm({ onSave, onCancel, initial }) {
   const removeEj = (di,ei) => setDias(ds=>ds.map((d,i)=>i!==di?d:{...d,ejercicios:d.ejercicios.filter((_,j)=>j!==ei)}));
   const addDia = () => setDias(ds=>[...ds,EMPTY_DIA()]);
   const removeDia = di => setDias(ds=>ds.filter((_,i)=>i!==di));
-
-  const onImgChange = e => {
-    const f=e.target.files[0]; if(!f) return;
-    const r=new FileReader();
-    r.onload=ev=>{setImgPreview(ev.target.result);setImgB64(ev.target.result.split(",")[1]);};
-    r.readAsDataURL(f);
-  };
-
-  const analyzeImage = async () => {
-    if (!imgB64) { setError("Sube una imagen primero"); return; }
-    setAiLoading(true); setError(null);
-    try {
-      const res = await fetch("https://api.anthropic.com/v1/messages",{
-        method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,
-          messages:[{role:"user",content:[
-            {type:"image",source:{type:"base64",media_type:"image/jpeg",data:imgB64}},
-            {type:"text",text:`Analiza esta imagen de un plan de entrenamiento de halterofilia. Devuelve SOLO JSON válido sin backticks:
-{"semana":"Xª SEMANA","mes":"Marzo","dias":[{"dia":"1º DIA","ejercicios":[{"tipo":"num","codigos":[50],"nota":"","series":"2/3 50, 3 60"},{"tipo":"libre","nombre":"Bíceps 4x10"}]}]}
-Reglas: tipo num=código numérico (codigos es array). tipo libre=texto libre. series formato "X/Y Z". nota para variantes.`}
-          ]}]})
-      });
-      const data=await res.json();
-      const txt=data.content.find(b=>b.type==="text")?.text||"";
-      const parsed=JSON.parse(txt.replace(/```json|```/g,"").trim());
-      if (!parsed?.dias) throw new Error("No se pudo interpretar");
-      setSemanaName(parsed.semana||semanaName);
-      setMes(parsed.mes||mes);
-      setDias(parsed.dias.map(d=>({...d,ejercicios:(d.ejercicios||[]).map(e=>e.tipo==="num"?{...e,codigos:Array.isArray(e.codigos)?e.codigos.join("+"):e.codigos}:e)})));
-      setMode("manual");
-    } catch(e) { setError("Error: "+e.message); }
-    finally { setAiLoading(false); }
-  };
 
   const save = async () => {
     if (!semanaName) { setError("Añade un nombre a la semana"); return; }
@@ -219,38 +187,8 @@ Reglas: tipo num=código numérico (codigos es array). tipo libre=texto libre. s
         <button onClick={onCancel} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:20}}>✕</button>
       </div>
 
-      {!mode && (
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-          {[{k:"manual",icon:"✏️",label:"Manual"},{k:"image",icon:"📸",label:"Desde imagen"}].map(o=>(
-            <button key={o.k} onClick={()=>setMode(o.k)}
-              style={{background:C.sub,border:`2px solid ${C.border}`,borderRadius:10,padding:"18px",cursor:"pointer",color:C.text,fontWeight:700,fontSize:14}}
-              onMouseEnter={e=>e.currentTarget.style.borderColor=C.accent} onMouseLeave={e=>e.currentTarget.style.borderColor=C.border}>
-              <div style={{fontSize:28,marginBottom:6}}>{o.icon}</div>{o.label}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {mode==="image" && (
+      {(
         <div>
-          <button onClick={()=>setMode(null)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:13,marginBottom:12}}>← Volver</button>
-          <div onClick={()=>imgRef.current.click()} style={{border:`2px dashed ${C.border}`,borderRadius:10,padding:28,textAlign:"center",cursor:"pointer",marginBottom:12}}
-            onMouseEnter={e=>e.currentTarget.style.borderColor=C.accent} onMouseLeave={e=>e.currentTarget.style.borderColor=C.border}>
-            {imgPreview?<img src={imgPreview} alt="preview" style={{maxWidth:"100%",maxHeight:180,borderRadius:8,objectFit:"contain"}}/>:
-              <><div style={{fontSize:36}}>📸</div><div style={{color:C.muted,fontSize:13,marginTop:6}}>Haz clic para subir imagen</div></>}
-            <input ref={imgRef} type="file" accept="image/*" onChange={onImgChange} style={{display:"none"}}/>
-          </div>
-          {error&&<div style={{color:C.red,fontSize:13,marginBottom:8}}>{error}</div>}
-          <button onClick={analyzeImage} disabled={aiLoading||!imgB64}
-            style={{width:"100%",background:aiLoading||!imgB64?"#333":C.accent,color:"#000",border:"none",borderRadius:8,padding:"11px",fontSize:14,fontWeight:900,cursor:aiLoading||!imgB64?"not-allowed":"pointer"}}>
-            {aiLoading?"🔍 Analizando...":"🤖 ANALIZAR CON IA"}
-          </button>
-        </div>
-      )}
-
-      {mode==="manual" && (
-        <div>
-          {!initial && <button onClick={()=>setMode(null)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:13,marginBottom:12}}>← Volver</button>}
           <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
             {inp(mes,setMes,"Mes","110px")}
             {inp(semanaName,setSemanaName,"Nombre semana (ej: 1ª SEMANA)","auto")}
@@ -495,6 +433,7 @@ export default function App() {
   const [athletes, setAthletes] = useState([]);
   const [prs, setPrs] = useState({arrancada:0,dostiempos:0,squat:0,squatf:0});
   const [mesSel, setMesSel] = useState(null);
+  const [showArchivo, setShowArchivo] = useState(false);
   const [tab, setTab] = useState("todas");
   const [openWeeks, setOpenWeeks] = useState({});
   const [newWeeks, setNewWeeks] = useState([]);
@@ -600,16 +539,11 @@ export default function App() {
     } catch {}
   },[newWeeks]);
 
-  const stats=useMemo(()=>{
-    let total=0,comp=0;
-    weeksMes.forEach(w=>{
-      sessions.filter(s=>s.week_id===w.id).forEach(s=>{
-        total++;
-        if(logs.find(l=>l.session_id===s.id&&l.completado)) comp++;
-      });
-    });
-    return {total,comp,pend:total-comp};
-  },[weeksMes,sessions,logs]);
+  const mesActual=useMemo(()=>pickCurrentMonth(weeks),[weeks]);
+  const idxActual=meses.indexOf(mesActual);
+  const mesesVisibles=idxActual<0?meses:meses.slice(idxActual);
+  const mesesArchivo=idxActual<0?[]:meses.slice(0,idxActual);
+  const mesEnArchivo=mesesArchivo.includes(mesSel);
 
   const tabBtn=(t,label)=>(
     <button onClick={()=>setTab(t)} style={{background:tab===t?C.accent:C.card,border:`1px solid ${C.border}`,color:tab===t?"#000":"#9ca3af",padding:"8px 18px",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:700}}>
@@ -644,23 +578,26 @@ export default function App() {
       )}
 
       {meses.length>0&&(
-        <div style={{background:"#000",borderBottom:`1px solid ${C.border}`,padding:"8px 24px",display:"flex",gap:8,overflowX:"auto"}}>
-          {meses.map(m=>(
-            <button key={m} onClick={()=>setMesSel(m)} style={{background:mesSel===m?C.accent:"none",border:`1px solid ${mesSel===m?C.accent:C.border}`,color:mesSel===m?"#000":C.muted,padding:"6px 18px",borderRadius:20,cursor:"pointer",fontSize:13,fontWeight:700,whiteSpace:"nowrap"}}>
-              {m}
-            </button>
-          ))}
+        <div style={{background:"#000",borderBottom:`1px solid ${C.border}`,padding:"8px 24px"}}>
+          <div style={{display:"flex",gap:8,overflowX:"auto",alignItems:"center"}}>
+            {mesesVisibles.map(m=>(
+              <button key={m} onClick={()=>setMesSel(m)} style={{background:mesSel===m?C.accent:"none",border:`1px solid ${mesSel===m?C.accent:C.border}`,color:mesSel===m?"#000":C.muted,padding:"6px 18px",borderRadius:20,cursor:"pointer",fontSize:13,fontWeight:700,whiteSpace:"nowrap"}}>{m}</button>
+            ))}
+            {mesesArchivo.length>0&&(
+              <button onClick={()=>setShowArchivo(v=>!v)} aria-pressed={showArchivo||mesEnArchivo} style={{background:"none",border:`1px dashed ${C.border}`,color:C.muted,padding:"6px 14px",borderRadius:20,cursor:"pointer",fontSize:13,fontWeight:700,whiteSpace:"nowrap",marginLeft:"auto"}}>
+                📁 Archivo ({mesesArchivo.length}) {(showArchivo||mesEnArchivo)?"▴":"▾"}
+              </button>
+            )}
+          </div>
+          {mesesArchivo.length>0&&(showArchivo||mesEnArchivo)&&(
+            <div style={{display:"flex",gap:8,overflowX:"auto",marginTop:8}}>
+              {mesesArchivo.map(m=>(
+                <button key={m} onClick={()=>setMesSel(m)} style={{background:mesSel===m?C.accent:"none",border:`1px solid ${mesSel===m?C.accent:C.border}`,color:mesSel===m?"#000":C.muted,padding:"6px 18px",borderRadius:20,cursor:"pointer",fontSize:13,fontWeight:700,whiteSpace:"nowrap"}}>{m}</button>
+              ))}
+            </div>
+          )}
         </div>
       )}
-
-      <div style={{display:"flex",gap:12,padding:"16px 24px",flexWrap:"wrap"}}>
-        {[{label:"Total sesiones",val:stats.total,color:C.accent},{label:"Completadas",val:stats.comp,color:C.green},{label:"Pendientes",val:stats.pend,color:C.red}].map(s=>(
-          <div key={s.label} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 20px",minWidth:110}}>
-            <div style={{fontSize:26,fontWeight:800,color:s.color}}>{s.val}</div>
-            <div style={{fontSize:12,color:C.muted}}>{s.label}</div>
-          </div>
-        ))}
-      </div>
 
       <div style={{display:"flex",gap:8,padding:"0 24px 16px",flexWrap:"wrap"}}>
         {tabBtn("todas","📋 Todas")}
