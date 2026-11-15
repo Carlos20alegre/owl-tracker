@@ -74,7 +74,6 @@ function AuthScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
-  const [code, setCode] = useState("");
   const [mode, setMode] = useState("login");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -91,15 +90,12 @@ function AuthScreen() {
         const {error} = await supabase.auth.signInWithPassword({email,password});
         if (error) throw error;
       } else {
-        if (!code.trim()) throw new Error("Introduce el código de acceso del gimnasio");
-        const {error} = await supabase.auth.signUp({email,password,options:{data:{full_name:name,access_code:code.trim()}}});
+        const {error} = await supabase.auth.signUp({email,password,options:{data:{full_name:name}}});
         if (error) throw error;
         const {error:e2} = await supabase.auth.signInWithPassword({email,password});
         if (e2) { alert("Cuenta creada. Ya puedes iniciar sesión."); setMode("login"); }
       }
-    } catch(e) {
-      setError(/Database error saving new user/i.test(e.message||"") ? "Código de acceso incorrecto" : e.message);
-    }
+    } catch(e) { setError(e.message); }
     finally { setLoading(false); }
   };
 
@@ -121,7 +117,6 @@ function AuthScreen() {
           {mode==="register" && inp(name,setName,"Nombre completo")}
           {inp(email,setEmail,"Email","email")}
           {inp(password,setPassword,"Contraseña","password")}
-          {mode==="register" && inp(code,setCode,"Código de acceso del gimnasio")}
           {error && <div style={{color:C.red,fontSize:13,marginBottom:10}}>{error}</div>}
           <button onClick={handle} disabled={loading}
             style={{width:"100%",background:C.accent,color:"#000",border:"none",borderRadius:8,padding:"12px",fontSize:14,fontWeight:900,cursor:"pointer",letterSpacing:1}}>

@@ -1,17 +1,10 @@
 -- OWL Lifting - endurecimiento de seguridad (ejecutar en Supabase > SQL Editor)
--- Antes de ejecutar, sustituye __SIGNUP_CODE__ por el codigo de acceso del gimnasio.
--- NO subas el codigo real a GitHub (el repo es publico).
 
--- 1) Entrenadores y configuracion
+-- 1) Entrenadores
 create table if not exists public.trainers (email text primary key);
 alter table public.trainers enable row level security;
 insert into public.trainers(email) values ('karls_d2@hotmail.com'),('carlosalecas@gmail.com')
   on conflict do nothing;
-
-create table if not exists public.app_config (key text primary key, value text not null);
-alter table public.app_config enable row level security;
-insert into public.app_config(key,value) values ('signup_code','__SIGNUP_CODE__')
-  on conflict (key) do update set value = excluded.value;
 
 create or replace function public.is_trainer() returns boolean
 language sql stable security definer set search_path = public as $$
@@ -24,7 +17,7 @@ grant execute on function public.is_trainer() to authenticated;
 -- 2) Borrar TODAS las politicas antiguas de las tres tablas
 do $$ declare p record; begin
   for p in select schemaname, tablename, policyname from pg_policies
-           where schemaname='public' and tablename in ('weeks','sessions','athlete_logs','trainers','app_config')
+           where schemaname='public' and tablename in ('weeks','sessions','athlete_logs','trainers')
   loop execute format('drop policy %I on %I.%I', p.policyname, p.schemaname, p.tablename); end loop;
 end $$;
 
@@ -64,19 +57,7 @@ $$;
 revoke all on function public.get_users() from public, anon;
 grant execute on function public.get_users() to authenticated;
 
--- 6) Codigo de acceso obligatorio al registrarse
-create or replace function public.check_signup_code() returns trigger
-language plpgsql security definer set search_path = public as $$
-declare expected text;
-begin
-  select value into expected from public.app_config where key='signup_code';
-  if expected is null or coalesce(new.raw_user_meta_data ->> 'access_code','') <> expected then
-    raise exception 'Codigo de acceso incorrecto';
-  end if;
-  new.raw_user_meta_data := new.raw_user_meta_data - 'access_code';
-  return new;
-end $$;
-
+-- Limpieza por si se aplico una version anterior con codigo de acceso
 drop trigger if exists owl_check_signup_code on auth.users;
-create trigger owl_check_signup_code before insert on auth.users
-  for each row execute function public.check_signup_code();
+drop function if exists public.check_signup_code();
+drop table if exists public.app_config;
